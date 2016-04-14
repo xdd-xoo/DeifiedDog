@@ -88,16 +88,21 @@ td {padding: 4px;font-size:14px;}
 <script>
 function runTest() {
 	var appPath = document.getElementById("appPath").value;
+	var apkNumber = document.getElementById("apkNumber").value;
 	if (appPath == "") {
 		alert("Local Path is empty!");
 		return;
 	}
+	if (apkNumber == "" || apkNumber >= 5500){
+		alert("APK Number Download is invalid!");
+		return;
+	}
 	var shell = new ActiveXObject("WScript.Shell");
-	shell.run("DeifiedDog.bat "+appPath+"");
+	shell.run("DeifiedDog.bat "+appPath+" "+apkNumber+"");
 }
 
 window.onload = function(){
-	window.resizeTo(650, 400);
+	window.resizeTo(600, 400);
 };
 </script>
 </HEAD>
@@ -117,7 +122,8 @@ DeifiedDog
 <fieldset>
 <legend><i>Local Storage Setting</i></legend>
 <table>
-<tr><td>Local Storage Path</td><td><input type="Text" id="appPath" name="appPath" style="width:400px;" value="C:\Dropbox\Apks"></td></tr>
+<tr><td>Local Storage Path</td><td><input type="Text" id="appPath" name="appPath" style="width:200px;" value="C:\Dropbox\Apks"></td></tr>
+<tr><td>APK Number Download</td><td><input type="Text" id="apkNumber" name="apkNumber" style="width:200px;" value=3000></td><td><p style="color:red"><b>Don't more than 5500</b></p></td></tr>
 </table>
 </fieldset>
 <p style="text-align:center;">
