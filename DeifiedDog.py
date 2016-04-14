@@ -1,4 +1,5 @@
 #-*- coding:gbk -*-
+from __future__ import division  
 import urllib 
 import re
 import os 
@@ -6,15 +7,23 @@ import time
 import xlwt
 from xlwt import *
 import sys
+import threading
+import random
+from string import atoi
 reload(sys)
 sys.setdefaultencoding('utf-8')
 
 global result_app_info
 global local_storage 
+global app_context
+#global page_deepth
+app_context = list()
+mutex = threading.Lock()  
+
 regex_info = re.compile(r'<span class="list_title font14_2"><.*>(.*)</a>\s*</span>$')
 regex_version = re.compile(r'<span class="list_version font12">(.*)</span>$')
 regex_down = re.compile(r'<a href="/appdown/(.*)" rel="nofollow">$')
-
+filter_root = r"?sort=5&dmin=200&pi=%d"
 app_root_url = r"http://apk.hiapk.com/apps/"
 game_root_url = r"http://apk.hiapk.com/games/"
 web_download_root = r"http://apk.hiapk.com/appdown/"
@@ -26,8 +35,7 @@ def update_app_category(app_root_url):
     for line in content:
         res = re.findall(regex,line)
         if res:
-            app_category.append(app_root_url+res[0])
-
+            app_category.append(app_root_url+res[0]+filter_root)
     return app_category
     		
 def update_game_category(game_root_url):
@@ -37,50 +45,66 @@ def update_game_category(game_root_url):
     for line in content:
         res = re.findall(regex,line)
         if res:
-            game_category.append(game_root_url+res[0])
+            game_category.append(game_root_url+res[0]+filter_root)
     return game_category
 
 
-def get_each_category_app_info(category):
-    app_context = []
+def get_each_category_app_info(category,page_deepth):
+    global app_context
+    #global page_deepth
     info_label = None
     version_label = None
     down_label = None
-    web_line = urllib.urlopen(category).readlines()
-    for line in web_line:
-        line = line.rstrip()
-        if re.findall(regex_info,line):
-            info_label = True
-            res1 = re.findall(regex_info,line)
-            #print res1[0]
-            continue
-        if re.findall(regex_version,line):
-            version_label = True
-            res2 = re.findall(regex_version,line)
-            #print res2[0]
-            continue
-        if re.findall(regex_down,line.strip()):
-            down_label = True
-            res3 = re.findall(regex_down,line)
-            print res3[0]
+    print category
+    for i in range(1,page_deepth+1):
+        category_filter = category%i
+        print category_filter 
+        web_line = urllib.urlopen(category_filter).readlines()
+        for line in web_line:
+            line = line.rstrip()
+            if re.findall(regex_info,line):
+                info_label = True
+                res1 = re.findall(regex_info,line)
+                #print res1[0]
+                continue
+            if re.findall(regex_version,line):
+                version_label = True
+                res2 = re.findall(regex_version,line)
+                #print res2[0]
+                continue
+            if re.findall(regex_down,line.strip()):
+                down_label = True
+                res3 = re.findall(regex_down,line)
+                #print res3[0]
 
-        if info_label and version_label and down_label :
-            app_context.append((category.split('/')[-1],res1[0],res2[0],res3[0]))
-            info_label = None
-            version_label = None
-            down_label = None
-    if len(app_context) > 5 :     
-        return app_context[0:5]
-    else :
-        return app_context
+            if info_label and version_label and down_label :
+                if mutex.acquire():  
+                    app_context.append((category.split('?')[0].split('/')[-1],res1[0],res2[0],res3[0]))
+                    mutex.release()
+                info_label = None
+                version_label = None
+                down_label = None
+    #if len(app_context):     
+    #    return app_context
+
 
 def generate_app_context():
-    app_context_list = []
+    global app_context
+    #app_context_list = []
+    threads = []
     for category in update_app_category(app_root_url):
-        app_context_list.extend(get_each_category_app_info(category))
+        t = threading.Thread(target=get_each_category_app_info,args=(category,page_deepth))
+        threads.append(t)
+        t.start()
+
     for category in update_app_category(game_root_url):
-        app_context_list.extend(get_each_category_app_info(category))
-    return app_context_list
+        t = threading.Thread(target=get_each_category_app_info,args=(category,page_deepth))
+        threads.append(t)
+        t.start()
+
+    for thread in threads:
+        thread.join()
+    return app_context
 
 def UpdateDataToExcel():
     time_stamp = time.strftime("%Y-%m-%d-%H%M%S", time.localtime())
@@ -159,83 +183,47 @@ def cbk(a, b, c):
 
 def main():
     global result_app_info
+    global app_context
     global local_storage
-    if len(sys.argv[1:])>0:
+    global apk_number
+    global result_app_info
+    global page_deepth
+    result_app_info = list()
+    if len(sys.argv[1:])>1:
         local_storage = sys.argv[1]
+        apk_number = atoi(sys.argv[2])
     else:
         local_storage = "C:\Dropbox\APKs"
+        apk_number = 3000
 
     if not os.path.exists(local_storage):
         os.mkdir(local_storage)
+    page_deepth = apk_number/290
+    if page_deepth <= 1:
+        page_deepth = 1
+    if page_deepth > 1:
+        page_deepth = int(page_deepth)+1
 
-    result_app_info = generate_app_context()  
+    result_app_info = generate_app_context()
+    #while len(result_app_info)<apk_number:
+    #    random_choice = random.choice(result_info)
+    #    if random_choice not in result_app_info:
+    #        result_app_info.append(random_choice)
+
     UpdateDataToExcel()
+    
     item = 1
     for app in result_app_info:
-
         if len(app) == 4 and app[3]:
             app_url = web_download_root+app[3]
             local_url  = local_storage+"\\"+app[3]+".apk"
             try :
                 print "Start to download the %d : %s ,save the app at %s"%(item,app[3],local_url)
                 urllib.urlretrieve(app_url,local_url,cbk)
-
             except :
                 print "download the app %s failed , remove the imcompletely file "%app[3]
                 os.system("del %s"%local_url)
             item +=1
-
-
-
-
-def init_local_downloads(category):
-    foder = category.split("/")[-2]
-    sub_folder = category.split("/")[-1]
-    print "mkdir  %s\%s"%(foder,sub_folder)
-    os.system("mkdir %s\%s"%(foder,sub_folder))
-
-
-
+    
 if __name__ == "__main__":
     main()
-    """
-    print "parse app web page"
-    app_urls = collect_app_url()
-    print "parse app web page successfully"
-    print 
-    print "parse game web page"
-    game_urls = collect_game_url()
-    print "parse game web page successfully"
-    print
-
-
-
-    local_game_storage = "C:\Dropbox\APKs\Games"
-    if not os.path.isdir(local_game_storage):
-        os.system("mkdir %s"%local_game_storage)
-    local_app_storage = "C:\Dropbox\APKs\Apps"
-    if not os.path.isdir(local_app_storage):
-        os.system("mkdir %s"%local_app_storage)
-
-    item = 1
-
-    for app in game_urls:
-        try:
-            print "Start to download the %d : %s"%(item,app.split("/")[-1])
-            local_path = local_game_storage+"\\"+app.split("/")[-1]+".apk"
-            urllib.urlretrieve(android_web_root+app,local_path)
-            item +=1
-        except :
-            print "download %s failed"%app
-            os.system("del %s"%local_path)
-    for app in app_urls:
-        try:
-
-            print "Start to download the %d : %s"%(item,app.split("/")[-1])
-            local_path  = local_app_storage+"\\"+app.split("/")[-1]+".apk"
-            urllib.urlretrieve(android_web_root+app,local_path)
-            item +=1           
-        except :
-            print "download %s failed"%app
-            os.system("del %s"%local_path)
-	"""
